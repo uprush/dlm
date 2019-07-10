@@ -203,6 +203,10 @@ def calculate_report(temp_dic):
         if 'a_warm' in dir_temp: a_warms += dir_temp['a_warm']
         if 'a_cold' in dir_temp: a_colds += dir_temp['a_cold']
 
+    if files == 0:
+        print("No file found in " + args.dfs_path)
+        sys.exit(-1)
+
     report = {
         'path': args.dfs_path,
         'files': files,
@@ -237,11 +241,12 @@ if __name__ == '__main__':
         subprocess.call(['hdfs', 'dfsadmin', '-fetchImage', args.fetch_dir])
 
         # Get fetched fsimage filename
-        files = [file for file in os.listdir(args.fetch_dir) if (file.startswith('fsimage_'))]
+        files = [os.path.join(args.fetch_dir, file) for file in os.listdir(args.fetch_dir) if (file.startswith('fsimage_'))]
         if len(files) == 0:
             print('Failed fetching fsimage from HFDS.')
             sys.exit(-1)
-        files.sort(key=os.path.getmtime, reverse = True)
+
+        files.sort(key=os.path.getmtime, reverse=True)
         image_file = files[0]
     else:
         image_file = args.image_file
