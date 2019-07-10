@@ -207,11 +207,14 @@ def calculate_report(temp_dic):
         print("No file found in " + args.dfs_path)
         sys.exit(-1)
 
+    bytes_GB = bytes/1024/1024/1024
     report = {
         'path': args.dfs_path,
         'files': files,
         'bytes': bytes,
-        'bytes_GB': format(bytes/1024/1024/1024, '.2f'),
+        'bytes_GB': format(bytes_GB, '.2f'),
+        'avg_file_bytes': format(bytes/files, '.0f'),
+        'avg_file_GB': format(bytes_GB/files, '.2f'),
         'm_hot': m_hots,
         '%m_hot': format(m_hots/files, '.2f'),
         'm_warm': m_warms,
