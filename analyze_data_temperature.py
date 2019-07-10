@@ -237,9 +237,12 @@ if __name__ == '__main__':
         subprocess.call(['hdfs', 'dfsadmin', '-fetchImage', args.fetch_dir])
 
         # Get fetched fsimage filename
-        files = filter(os.path.isfile, glob.glob(args.fetch_dir + "/fsimage_*"))
-        files.sort(key=os.path.getmtime)
-        image_file = files[len(files)-1]
+        files = [file for file in os.listdir(args.fetch_dir) if (file.startswith('fsimage_'))]
+        if len(files) == 0:
+            print('Failed fetching fsimage from HFDS.')
+            sys.exit(-1)
+        files.sort(key=os.path.getmtime, reverse = True)
+        image_file = files[0]
     else:
         image_file = args.image_file
 
