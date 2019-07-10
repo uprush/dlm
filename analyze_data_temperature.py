@@ -214,7 +214,7 @@ def calculate_report(temp_dic):
         'bytes': bytes,
         'bytes_GB': format(bytes_GB, '.2f'),
         'avg_file_bytes': format(bytes/files, '.0f'),
-        'avg_file_GB': format(bytes_GB/files, '.2f'),
+        'avg_file_MB': format(1024*bytes_GB/files, '.2f'),
         'm_hot': m_hots,
         '%m_hot': format(m_hots/files, '.2f'),
         'm_warm': m_warms,
