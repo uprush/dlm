@@ -9,7 +9,7 @@ import time
 import json
 
 ONE_DAY = 24 * 60 * 60 * 1000 # milliseconds
-HOT = 3 * ONE_DAY
+HOT = 7 * ONE_DAY
 WARM = 30 * ONE_DAY
 COLD = 90 * ONE_DAY
 
@@ -29,7 +29,7 @@ def parse_fsimage(image_xml):
     xtree = et.parse(image_xml)
     xroot = xtree.getroot()
 
-    inode_cols = ["id", "type", "name", "mtime", "atime"]
+    inode_cols = ["id", "type", "name", "mtime", "atime", "numBytes"]
     inode_dir_cols = ["parent", "children"]
 
     x_inodes = xroot.find('INodeSection')
@@ -42,22 +42,32 @@ def parse_fsimage(image_xml):
 
     print("\nBuilding inode data frame")
     df_inode = pd.DataFrame(columns=inode_cols)
+
     all_inodes = x_inodes.findall('inode')
     for node in all_inodes:
         s_id = node.find("id").text
         s_type = node.find("type").text
         s_name = node.find("name").text
         s_mtime = node.find("mtime").text
-        s_atime = node.find("atime").text if node.find("atime") is not None else None
 
-        df_inode = df_inode.append(pd.Series([s_id, s_type, s_name, s_mtime, s_atime],
+        s_atime = None
+        s_numByte = 0
+        if s_type == 'FILE':
+            s_atime = node.find("atime").text
+            x_blocks = node.find('blocks')
+            if x_blocks is not None:
+                for x_block in x_blocks.findall('block'):
+                    s_bid = x_block.find('id').text
+                    s_numByte += int(x_block.find('numBytes').text)
+
+        df_inode = df_inode.append(pd.Series([s_id, s_type, s_name, s_mtime, s_atime, s_numByte],
                                          index=inode_cols), ignore_index=True)
 
     df_inode = df_inode.set_index('id')
     root_id = df_inode.iloc[0].name
     print(df_inode.shape)
     print("Root inode id: " + root_id)
-    print(df_inode.head(3))
+    # print(df_inode.head(10))
 
     print("\nBuilding inode directory data frame")
     df_inode_dir = pd.DataFrame(columns=inode_dir_cols)
@@ -75,7 +85,7 @@ def parse_fsimage(image_xml):
 
     df_inode_dir = df_inode_dir.set_index('parent')
     print(df_inode_dir.shape)
-    print(df_inode_dir.head(3))
+    # print(df_inode_dir.head(10))
 
     return root_id, df_inode, df_inode_dir
 
@@ -127,19 +137,19 @@ def analyze_inode_bfs(dir_queue, curr_path_queue, df_inode, df_inode_dir, temp_d
 
         if current_path in temp_dic:
             dir_summary = temp_dic[current_path]
-            dir_file = dir_summary['file']
+            dir_files = dir_summary['files']
             if 'm_hot' in dir_summary:
-                dir_summary['%m_hot'] = format(dir_summary['m_hot']/dir_file, '.2f')
+                dir_summary['%m_hot'] = format(dir_summary['m_hot']/dir_files, '.2f')
             if 'm_warm' in dir_summary:
-                dir_summary['%m_warm'] = format(dir_summary['m_warm']/dir_file, '.2f')
+                dir_summary['%m_warm'] = format(dir_summary['m_warm']/dir_files, '.2f')
             if 'm_cold' in dir_summary:
-                dir_summary['%m_cold'] = format(dir_summary['m_cold']/dir_file, '.2f')
+                dir_summary['%m_cold'] = format(dir_summary['m_cold']/dir_files, '.2f')
             if 'a_hot' in dir_summary:
-                dir_summary['%a_hot'] = format(dir_summary['a_hot']/dir_file, '.2f')
+                dir_summary['%a_hot'] = format(dir_summary['a_hot']/dir_files, '.2f')
             if 'a_warm' in dir_summary:
-                dir_summary['%a_warm'] = format(dir_summary['a_warm']/dir_file, '.2f')
+                dir_summary['%a_warm'] = format(dir_summary['a_warm']/dir_files, '.2f')
             if 'a_cold' in dir_summary:
-                dir_summary['%a_cold'] = format(dir_summary['a_cold']/dir_file, '.2f')
+                dir_summary['%a_cold'] = format(dir_summary['a_cold']/dir_files, '.2f')
         else:
             dir_summary = ''
         print("|-{}\t{}".format(current_path, dir_summary))
@@ -158,10 +168,11 @@ def analyze_file(file_inode, temp_dic, current_path):
     if current_path in temp_dic:
         dir_temp = temp_dic[current_path]
     else:
-        dir_temp = {}
+        dir_temp = {'files': 0, 'bytes': 0}
         temp_dic[current_path] = dir_temp
 
-    dir_temp["file"] = dir_temp["file"] + 1 if "file" in dir_temp else 1
+    dir_temp["files"] += 1
+    dir_temp["bytes"] += file_inode['numBytes']
 
     file_mtemp = utc_now - child_mtime
     if file_mtemp < HOT:
@@ -180,10 +191,11 @@ def analyze_file(file_inode, temp_dic, current_path):
         dir_temp["a_cold"] = dir_temp["a_cold"] + 1 if "a_cold" in dir_temp else 1
 
 def calculate_report(temp_dic):
-    files = m_hots = m_warms = m_colds = 0
+    files = m_hots = m_warms = m_colds = bytes = 0
     a_hots = a_warms = a_colds = 0
     for dir_temp in temp_dic.values():
-        files += dir_temp['file']
+        files += dir_temp['files']
+        bytes += dir_temp['bytes']
         if 'm_hot' in dir_temp: m_hots += dir_temp['m_hot']
         if 'm_warm' in dir_temp: m_warms += dir_temp['m_warm']
         if 'm_cold' in dir_temp: m_colds += dir_temp['m_cold']
@@ -193,7 +205,9 @@ def calculate_report(temp_dic):
 
     report = {
         'path': args.dfs_path,
-        'file': files,
+        'files': files,
+        'bytes': bytes,
+        'bytes_GB': format(bytes/1024/1024/1024, '.2f'),
         'm_hot': m_hots,
         '%m_hot': format(m_hots/files, '.2f'),
         'm_warm': m_warms,
